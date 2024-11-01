@@ -1,0 +1,55 @@
+name: Build wheels
+on: [push, pull_request, workflow_dispatch]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
+  cancel-in-progress: true
+
+jobs:
+  tests:
+    name: test py${{ matrix.python-version }} on ${{ matrix.os }} 
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: true
+      matrix:
+        os: [ubuntu-latest]
+        python-version: ["3.7", "3.10", "3.11"]
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Build module
+        run: |
+          python setup.py build_ext -i
+      - name: Run tests
+        run: |
+          python test_pycld2.py
+
+  build-wheels:
+    needs: [tests]
+
+    name: py${{ matrix.python-version }} on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+
+    strategy:
+      fail-fast: false
+      matrix:
+        # cibuildwheel builds linux wheels inside a manylinux container
+        # it also takes care of procuring the correct python version for us
+        # macos-13 is an intel runner, macos-14 is apple silicon
+        os: [ubuntu-latest]
+        python-version: [37, 310, 311]
+        
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pypa/cibuildwheel@v2.19.2
+        env:
+          CIBW_BUILD: "cp${{ matrix.python-version}}-*"
+          
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cibw-wheels-${{ matrix.os }}-${{ strategy.job-index }}
+          path: ./wheelhouse/*.whl
